@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/vova616/chipmunk"
@@ -25,25 +26,31 @@ var (
 )
 
 func drawRoom(box *chipmunk.Shape) {
-	x := box.GetAsBox().Position.X
-	y := box.GetAsBox().Position.Y
-	h := box.GetAsBox().Height
-	w := box.GetAsBox().Width
+	h := float64(box.GetAsBox().Height)
+	w := float64(box.GetAsBox().Width)
+	x1 := float64(0 - w*0.5)
+	y1 := float64(0 - h*0.5)
+	x2 := float64(0 + w*0.5)
+	y2 := float64(0 - h*0.5)
+	x3 := float64(0 + w*0.5)
+	y3 := float64(0 + h*0.5)
+	x4 := float64(0 - w*0.5)
+	y4 := float64(0 + h*0.5)
 
 	gl.Begin(gl.POLYGON)
 	gl.Color4f(.3, .3, 1, .2)
-	gl.Vertex2d(float64(x-w*0.5), float64(y-h*0.5))
-	gl.Vertex2d(float64(x+w*0.5), float64(y-h*0.5))
-	gl.Vertex2d(float64(x+w*0.5), float64(y+h*0.5))
-	gl.Vertex2d(float64(x-w*0.5), float64(y+h*0.5))
+	gl.Vertex2d(x1, y1)
+	gl.Vertex2d(x2, y2)
+	gl.Vertex2d(x3, y3)
+	gl.Vertex2d(x4, y4)
 	gl.End()
 	gl.Begin(gl.LINE_LOOP)
-	gl.LineWidth(1.0)
 	gl.Color4f(.3, .3, 1, .9)
-	gl.Vertex2d(float64(x-w*0.5), float64(y-h*0.5))
-	gl.Vertex2d(float64(x+w*0.5), float64(y-h*0.5))
-	gl.Vertex2d(float64(x+w*0.5), float64(y+h*0.5))
-	gl.Vertex2d(float64(x-w*0.5), float64(y+h*0.5))
+	gl.LineWidth(1.0)
+	gl.Vertex2d(x1, y1)
+	gl.Vertex2d(x2, y2)
+	gl.Vertex2d(x3, y3)
+	gl.Vertex2d(x4, y4)
 	gl.End()
 }
 
@@ -76,7 +83,7 @@ func draw(window *glfw.Window) {
 	h := 0
 
 	gl.Color4f(.1, .1, .1, .8)
-	gl.LineWidth(.5)
+	gl.LineWidth(1.0)
 	//gl.Begin(gl.LINE_LOOP)
 	//gl.Vertex3d(-x, y, float64(h))
 	//gl.Vertex3d(x, y, float64(h))
@@ -135,10 +142,12 @@ func draw(window *glfw.Window) {
 	// draw boxes
 	for _, box := range boxes {
 		gl.PushMatrix()
-		pos := box.Body.Position()
 		rot := box.Body.Angle() * chipmunk.DegreeConst
-		gl.Translatef(float32(pos.X), float32(pos.Y), 0.0)
-		gl.Rotatef(float32(rot), 0, 0, 1)
+		gl.Rotatef(float32(rot), 0, 0, 1.0)
+		//gl.Translatef(float32(box.Body.Position().X), float32(box.Body.Position().Y), 0.0)
+		x := roundm(float64(box.Body.Position().X), 4.0)
+		y := roundm(float64(box.Body.Position().Y), 4.0)
+		gl.Translated(x, y, 0.0)
 		drawRoom(box)
 		gl.PopMatrix()
 	}
@@ -156,11 +165,10 @@ func draw(window *glfw.Window) {
 }
 
 func addRoom(pos vect.Vect, w vect.Float, h vect.Float) {
-	box := chipmunk.NewBox(vect.Vector_Zero, vect.Float(w), vect.Float(h))
+	box := chipmunk.NewBox(vect.Vector_Zero, w, h)
 	box.SetElasticity(0.5)
-	body := chipmunk.NewBody(vect.Float(1), box.Moment(float32(1)))
+	body := chipmunk.NewBody(1.0, box.Moment(float32(1.0)))
 	body.SetPosition(pos)
-
 	body.AddShape(box)
 	//space.AddBody(body)
 	boxes = append(boxes, box)
@@ -173,7 +181,7 @@ func addBall() {
 
 	body := chipmunk.NewBody(vect.Float(ballMass), ball.Moment(float32(ballMass)))
 	body.SetPosition(vect.Vect{vect.Float(x), 600.0})
-	body.SetAngle(vect.Float(rand.Float32() * 2 * math.Pi))
+	body.SetAngle(0.0)
 
 	body.AddShape(ball)
 	space.AddBody(body)
@@ -200,7 +208,15 @@ func step(dt float32) {
 	space.Step(vect.Float(dt))
 
 	for i := 0; i < len(boxes); i++ {
-		boxes[i].Body.SetAngle(0.0)
+		//x := boxes[i].Body.Position().X
+		//y := boxes[i].Body.Position().Y
+		//x = vect.Float(roundm(float64(x), 4.0))
+		//y = vect.Float(roundm(float64(y), 4.0))
+		//boxes[i].Body.SetPosition(vect.Vect{
+		//	X: x,
+		//	Y: y,
+		//})
+		boxes[i].Body.SetAngle(vect.Float(0))
 	}
 
 	//for i := 0; i < len(balls); i++ {
@@ -245,7 +261,7 @@ func onResize(window *glfw.Window, w, h int) {
 }
 
 func roundm(n, m float64) float64 {
-	return math.Floor(((n + m - 1) / m)) * m
+	return math.Floor(((n + m - 1.0) / m)) * m
 }
 func getRandomPointInCircle(radius float64) vect.Vect {
 	t := 2 * math.Pi * rand.Float64()
@@ -304,17 +320,20 @@ func main() {
 		switch phase {
 		case 0:
 			pos := getRandomPointInCircle(100.0)
-			w := vect.Float(rand.Intn(52) + 12)
-			h := vect.Float(rand.Intn(52) + 12)
+			w := vect.Float(roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0)
+			h := vect.Float(roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0)
 			addRoom(pos, w, h)
-			if len(boxes) > 70 {
+			if len(boxes) > 50 {
 				phase = 1
+				fmt.Println("phase1")
 			}
 		case 1:
 			setRoomToSpace()
 			phase = 2
+			fmt.Println("phase2")
 		case 2:
 			if waitForSleep() {
+				fmt.Println("phase3")
 				phase = 3
 			}
 		case 3:
