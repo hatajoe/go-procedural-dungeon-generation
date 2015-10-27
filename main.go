@@ -15,14 +15,8 @@ import (
 )
 
 var (
-	ballRadius = 25
-	ballMass   = 1
-
-	space       *chipmunk.Space
-	balls       []*chipmunk.Shape
-	boxes       []*chipmunk.Shape
-	staticLines []*chipmunk.Shape
-	deg2rad     = math.Pi / 180
+	space *chipmunk.Space
+	boxes []*chipmunk.Shape
 )
 
 func drawRoom(box *chipmunk.Shape) {
@@ -54,16 +48,6 @@ func drawRoom(box *chipmunk.Shape) {
 	gl.End()
 }
 
-// drawCircle draws a circle for the specified radius, rotation angle, and the specified number of sides
-func drawCircle(radius float64, sides int) {
-	gl.Begin(gl.LINE_LOOP)
-	for a := 0.0; a < 2*math.Pi; a += (2 * math.Pi / float64(sides)) {
-		gl.Vertex2d(math.Sin(a)*radius, math.Cos(a)*radius)
-	}
-	gl.Vertex3f(0, 0, 0)
-	gl.End()
-}
-
 // OpenGL draw function
 func draw(window *glfw.Window) {
 	gl.Clear(gl.COLOR_BUFFER_BIT)
@@ -84,13 +68,6 @@ func draw(window *glfw.Window) {
 
 	gl.Color4f(.1, .1, .1, .8)
 	gl.LineWidth(1.0)
-	//gl.Begin(gl.LINE_LOOP)
-	//gl.Vertex3d(-x, y, float64(h))
-	//gl.Vertex3d(x, y, float64(h))
-	//gl.Vertex3d(x, -y, float64(h))
-	//gl.Vertex3d(-x, -y, float64(h))
-	//gl.End()
-	//gl.LineWidth(1.0)
 
 	// x方向
 	var x0, x1, y0, y1 float64
@@ -124,44 +101,19 @@ func draw(window *glfw.Window) {
 		gl.End()
 	}
 
-	//gl.LineWidth(1.0)
 	gl.PopMatrix()
-
-	//gl.Begin(gl.LINES)
-	//gl.Color3f(.2, .2, .2)
-	//for i := range staticLines {
-	//	x := staticLines[i].GetAsSegment().A.X
-	//	y := staticLines[i].GetAsSegment().A.Y
-	//	gl.Vertex3f(float32(x), float32(y), 0)
-	//	x = staticLines[i].GetAsSegment().B.X
-	//	y = staticLines[i].GetAsSegment().B.Y
-	//	gl.Vertex3f(float32(x), float32(y), 0)
-	//}
-	//gl.End()
 
 	// draw boxes
 	for _, box := range boxes {
 		gl.PushMatrix()
 		rot := box.Body.Angle() * chipmunk.DegreeConst
 		gl.Rotatef(float32(rot), 0, 0, 1.0)
-		//gl.Translatef(float32(box.Body.Position().X), float32(box.Body.Position().Y), 0.0)
 		x := roundm(float64(box.Body.Position().X), 4.0)
 		y := roundm(float64(box.Body.Position().Y), 4.0)
 		gl.Translated(x, y, 0.0)
 		drawRoom(box)
 		gl.PopMatrix()
 	}
-
-	//// draw balls
-	//for _, ball := range balls {
-	//	gl.PushMatrix()
-	//	pos := ball.Body.Position()
-	//	rot := ball.Body.Angle() * chipmunk.DegreeConst
-	//	gl.Translatef(float32(pos.X), float32(pos.Y), 0.0)
-	//	gl.Rotatef(float32(rot), 0, 0, 1)
-	//	drawCircle(float64(ballRadius), 60)
-	//	gl.PopMatrix()
-	//}
 }
 
 func addRoom(pos vect.Vect, w vect.Float, h vect.Float) {
@@ -172,20 +124,6 @@ func addRoom(pos vect.Vect, w vect.Float, h vect.Float) {
 	body.AddShape(box)
 	//space.AddBody(body)
 	boxes = append(boxes, box)
-}
-
-func addBall() {
-	x := rand.Intn(350-115) + 115
-	ball := chipmunk.NewCircle(vect.Vector_Zero, float32(ballRadius))
-	ball.SetElasticity(0.95)
-
-	body := chipmunk.NewBody(vect.Float(ballMass), ball.Moment(float32(ballMass)))
-	body.SetPosition(vect.Vect{vect.Float(x), 600.0})
-	body.SetAngle(0.0)
-
-	body.AddShape(ball)
-	space.AddBody(body)
-	balls = append(balls, ball)
 }
 
 func setRoomToSpace() {
@@ -203,48 +141,17 @@ func waitForSleep() bool {
 	return true
 }
 
-// step advances the physics engine and cleans up any balls that are off-screen
 func step(dt float32) {
 	space.Step(vect.Float(dt))
 
 	for i := 0; i < len(boxes); i++ {
-		//x := boxes[i].Body.Position().X
-		//y := boxes[i].Body.Position().Y
-		//x = vect.Float(roundm(float64(x), 4.0))
-		//y = vect.Float(roundm(float64(y), 4.0))
-		//boxes[i].Body.SetPosition(vect.Vect{
-		//	X: x,
-		//	Y: y,
-		//})
 		boxes[i].Body.SetAngle(vect.Float(0))
 	}
-
-	//for i := 0; i < len(balls); i++ {
-	//	p := balls[i].Body.Position()
-	//	if p.Y < -100 {
-	//		space.RemoveBody(balls[i].Body)
-	//		balls[i] = nil
-	//		balls = append(balls[:i], balls[i+1:]...)
-	//		i-- // consider same index again
-	//	}
-	//}
 }
 
 // createBodies sets up the chipmunk space and static bodies
 func createBodies() {
 	space = chipmunk.NewSpace()
-	//space.Gravity = vect.Vect{0, -900}
-	//
-	//	staticBody := chipmunk.NewBodyStatic()
-	//	staticLines = []*chipmunk.Shape{
-	//		chipmunk.NewSegment(vect.Vect{111.0, 280.0}, vect.Vect{407.0, 246.0}, 0),
-	//		chipmunk.NewSegment(vect.Vect{407.0, 246.0}, vect.Vect{407.0, 343.0}, 0),
-	//	}
-	//	for _, segment := range staticLines {
-	//		segment.SetElasticity(0.6)
-	//		staticBody.AddShape(segment)
-	//	}
-	//	space.AddBody(staticBody)
 }
 
 // onResize sets up a simple 2d ortho context based on the window size
@@ -310,13 +217,8 @@ func main() {
 	glfw.SwapInterval(1)
 
 	phase := 0
-	//ticksToNextBall := 10
 	ticker := time.NewTicker(time.Second / 60)
 	for !window.ShouldClose() {
-		//ticksToNextBall--
-		//if ticksToNextBall == 0 {
-		//	ticksToNextBall = rand.Intn(100) + 1
-		//addBall()
 		switch phase {
 		case 0:
 			pos := getRandomPointInCircle(100.0)
@@ -338,7 +240,6 @@ func main() {
 			}
 		case 3:
 		}
-		//}
 		draw(window)
 		step(1.0 / 60.0)
 		window.SwapBuffers()
