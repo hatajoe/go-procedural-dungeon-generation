@@ -165,7 +165,7 @@ func draw(window *glfw.Window) {
 }
 
 func addRoom(pos vect.Vect, w vect.Float, h vect.Float) {
-	box := chipmunk.NewBox(vect.Vector_Zero, w, h)
+	box := chipmunk.NewBox(vect.Vector_Zero, w+0.5, h+0.5)
 	box.SetElasticity(0.5)
 	body := chipmunk.NewBody(1.0, box.Moment(float32(1.0)))
 	body.SetPosition(pos)
