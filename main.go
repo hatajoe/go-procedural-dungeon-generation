@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
+	"github.com/go-gl/mathgl/mgl32"
 	"github.com/vova616/chipmunk"
 	"github.com/vova616/chipmunk/vect"
 	"log"
@@ -14,14 +15,20 @@ import (
 	"time"
 )
 
+// Room is room
+type Room struct {
+	Color mgl32.Vec4
+	Box   *chipmunk.Shape
+}
+
 var (
 	space *chipmunk.Space
-	boxes []*chipmunk.Shape
+	rooms []*Room
 )
 
-func drawRoom(box *chipmunk.Shape) {
-	h := float64(box.GetAsBox().Height)
-	w := float64(box.GetAsBox().Width)
+func drawRoom(room *Room) {
+	h := float64(room.Box.GetAsBox().Height)
+	w := float64(room.Box.GetAsBox().Width)
 	x1 := float64(0 - w*0.5)
 	y1 := float64(0 - h*0.5)
 	x2 := float64(0 + w*0.5)
@@ -32,7 +39,12 @@ func drawRoom(box *chipmunk.Shape) {
 	y4 := float64(0 + h*0.5)
 
 	gl.Begin(gl.POLYGON)
-	gl.Color4f(.3, .3, 1, .2)
+	gl.Color4f(
+		room.Color.X(),
+		room.Color.Y(),
+		room.Color.Z(),
+		room.Color.W(),
+	)
 	gl.Vertex2d(x1, y1)
 	gl.Vertex2d(x2, y2)
 	gl.Vertex2d(x3, y3)
@@ -104,14 +116,14 @@ func draw(window *glfw.Window) {
 	gl.PopMatrix()
 
 	// draw boxes
-	for _, box := range boxes {
+	for _, room := range rooms {
 		gl.PushMatrix()
-		rot := box.Body.Angle() * chipmunk.DegreeConst
+		rot := room.Box.Body.Angle() * chipmunk.DegreeConst
 		gl.Rotatef(float32(rot), 0, 0, 1.0)
-		x := roundm(float64(box.Body.Position().X), 4.0)
-		y := roundm(float64(box.Body.Position().Y), 4.0)
+		x := roundm(float64(room.Box.Body.Position().X), 4.0)
+		y := roundm(float64(room.Box.Body.Position().Y), 4.0)
 		gl.Translated(x, y, 0.0)
-		drawRoom(box)
+		drawRoom(room)
 		gl.PopMatrix()
 	}
 }
@@ -122,30 +134,35 @@ func addRoom(pos vect.Vect, w vect.Float, h vect.Float) {
 	body := chipmunk.NewBody(1.0, box.Moment(float32(1.0)))
 	body.SetPosition(pos)
 	body.AddShape(box)
-	//space.AddBody(body)
-	boxes = append(boxes, box)
+	room := Room{
+		Color: mgl32.Vec4{.3, .3, 1, .2},
+		Box:   box,
+	}
+	rooms = append(rooms, &room)
 }
 
 func setRoomToSpace() {
-	for _, v := range boxes {
-		space.AddBody(v.Body)
+	for _, v := range rooms {
+		space.AddBody(v.Box.Body)
 	}
 }
 
 func waitForSleep() bool {
-	for _, v := range boxes {
-		if !v.Body.IsSleeping() {
-			return false
+	sleeping := true
+	for _, v := range rooms {
+		if !v.Box.Body.IsSleeping() {
+			v.Color = mgl32.Vec4{.3, .0, .0, .2}
+			sleeping = false
 		}
 	}
-	return true
+	return sleeping
 }
 
 func step(dt float32) {
 	space.Step(vect.Float(dt))
 
-	for i := 0; i < len(boxes); i++ {
-		boxes[i].Body.SetAngle(vect.Float(0))
+	for i := 0; i < len(rooms); i++ {
+		rooms[i].Box.Body.SetAngle(vect.Float(0))
 	}
 }
 
@@ -225,7 +242,7 @@ func main() {
 			w := vect.Float(roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0)
 			h := vect.Float(roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0)
 			addRoom(pos, w, h)
-			if len(boxes) > 50 {
+			if len(rooms) > 50 {
 				phase = 1
 				fmt.Println("phase1")
 			}
@@ -234,14 +251,14 @@ func main() {
 			phase = 2
 			fmt.Println("phase2")
 		case 2:
+			step(1.0 / 60.0)
 			if waitForSleep() {
-				fmt.Println("phase3")
 				phase = 3
+				fmt.Println("phase3")
 			}
 		case 3:
 		}
 		draw(window)
-		step(1.0 / 60.0)
 		window.SwapBuffers()
 		glfw.PollEvents()
 		<-ticker.C // wait up to 1/60th of a second
