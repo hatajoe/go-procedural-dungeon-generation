@@ -5,8 +5,7 @@ import (
 	"github.com/go-gl/gl/v2.1/gl"
 	"github.com/go-gl/glfw/v3.1/glfw"
 	"github.com/go-gl/mathgl/mgl32"
-	"github.com/vova616/chipmunk"
-	"github.com/vova616/chipmunk/vect"
+	"github.com/jakecoffman/cp"
 	"log"
 	"math"
 	"math/rand"
@@ -18,17 +17,17 @@ import (
 // Room is room
 type Room struct {
 	Color mgl32.Vec4
-	Box   *chipmunk.Shape
+	Shape *cp.Shape
 }
 
 var (
-	space *chipmunk.Space
+	space *cp.Space
 	rooms []*Room
 )
 
 func drawRoom(room *Room) {
-	h := float64(room.Box.GetAsBox().Height)
-	w := float64(room.Box.GetAsBox().Width)
+	h := float64(room.Shape.BB().B - room.Shape.BB().T)
+	w := float64(room.Shape.BB().R - room.Shape.BB().L)
 	x1 := float64(0 - w*0.5)
 	y1 := float64(0 - h*0.5)
 	x2 := float64(0 + w*0.5)
@@ -118,57 +117,52 @@ func draw(window *glfw.Window) {
 	// draw boxes
 	for _, room := range rooms {
 		gl.PushMatrix()
-		rot := room.Box.Body.Angle() * chipmunk.DegreeConst
-		gl.Rotatef(float32(rot), 0, 0, 1.0)
-		x := roundm(float64(room.Box.Body.Position().X), 4.0)
-		y := roundm(float64(room.Box.Body.Position().Y), 4.0)
+
+		x := roundm(float64(room.Shape.Body().Position().X), 4.0)
+		y := roundm(float64(room.Shape.Body().Position().Y), 4.0)
 		gl.Translated(x, y, 0.0)
 		drawRoom(room)
 		gl.PopMatrix()
 	}
 }
 
-func addRoom(pos vect.Vect, w vect.Float, h vect.Float) {
-	box := chipmunk.NewBox(vect.Vector_Zero, w+0.5, h+0.5)
-	box.SetElasticity(0.5)
-	body := chipmunk.NewBody(1.0, box.Moment(float32(1.0)))
+func addRoom(pos cp.Vector, w float64, h float64) {
+	body := space.AddBody(cp.NewBody(1.0, cp.INFINITY))
 	body.SetPosition(pos)
-	body.AddShape(box)
+
+	shape := space.AddShape(cp.NewBox(body, w+0.5, h+0.5, 0))
+	shape.SetElasticity(1)
+	shape.SetFriction(0.0)
+
 	room := Room{
 		Color: mgl32.Vec4{.3, .3, 1, .2},
-		Box:   box,
+		Shape: shape,
 	}
 	rooms = append(rooms, &room)
 }
 
-func setRoomToSpace() {
-	for _, v := range rooms {
-		space.AddBody(v.Box.Body)
-	}
-}
-
 func waitForSleep() bool {
-	sleeping := true
+	sleeping := false
 	for _, v := range rooms {
-		if !v.Box.Body.IsSleeping() {
+		if v.Shape.Body().IsSleeping() {
 			v.Color = mgl32.Vec4{.3, .0, .0, .2}
+			sleeping = true
+		} else {
+			v.Color = mgl32.Vec4{.3, .3, 1, .2}
 			sleeping = false
 		}
 	}
 	return sleeping
 }
 
-func step(dt float32) {
-	space.Step(vect.Float(dt))
-
-	for i := 0; i < len(rooms); i++ {
-		rooms[i].Box.Body.SetAngle(vect.Float(0))
-	}
+func step(dt float64) {
+	space.Step(dt)
 }
 
-// createBodies sets up the chipmunk space and static bodies
-func createBodies() {
-	space = chipmunk.NewSpace()
+// createSpace sets up the chipmunk space and static bodies
+func createSpace() {
+	space = cp.NewSpace()
+	space.SleepTimeThreshold = 3
 }
 
 // onResize sets up a simple 2d ortho context based on the window size
@@ -187,7 +181,8 @@ func onResize(window *glfw.Window, w, h int) {
 func roundm(n, m float64) float64 {
 	return math.Floor(((n + m - 1.0) / m)) * m
 }
-func getRandomPointInCircle(radius float64) vect.Vect {
+
+func getRandomPointInCircle(radius float64) cp.Vector {
 	t := 2 * math.Pi * rand.Float64()
 	u := rand.Float64() + rand.Float64()
 	r := .0
@@ -196,9 +191,9 @@ func getRandomPointInCircle(radius float64) vect.Vect {
 	} else {
 		r = u
 	}
-	return vect.Vect{
-		X: vect.Float(roundm(radius*r*math.Cos(t), 4.0)) + 300,
-		Y: vect.Float(roundm(radius*r*math.Sin(t), 4.0)) + 300,
+	return cp.Vector{
+		X: roundm(radius*r*math.Cos(t), 4.0) + 300,
+		Y: roundm(radius*r*math.Sin(t), 4.0) + 300,
 	}
 }
 
@@ -229,7 +224,7 @@ func main() {
 	onResize(window, 600, 600)
 
 	// set up physics
-	createBodies()
+	createSpace()
 
 	glfw.SwapInterval(1)
 
@@ -239,15 +234,14 @@ func main() {
 		switch phase {
 		case 0:
 			pos := getRandomPointInCircle(100.0)
-			w := vect.Float(roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0)
-			h := vect.Float(roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0)
+			w := roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0
+			h := roundm(float64(rand.Intn(28)+8.0), 4.0) * 2.0
 			addRoom(pos, w, h)
 			if len(rooms) > 50 {
 				phase = 1
 				fmt.Println("phase1")
 			}
 		case 1:
-			setRoomToSpace()
 			phase = 2
 			fmt.Println("phase2")
 		case 2:
