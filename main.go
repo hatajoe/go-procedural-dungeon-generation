@@ -1,28 +1,38 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"github.com/go-gl/gl/v2.1/gl"
-	"github.com/go-gl/glfw/v3.1/glfw"
-	"github.com/go-gl/mathgl/mgl32"
-	"github.com/jakecoffman/cp"
 	"log"
 	"math"
 	"math/rand"
 	"os"
 	"runtime"
 	"time"
+
+	"github.com/fogleman/delaunay"
+	"github.com/go-gl/gl/v2.1/gl"
+	"github.com/go-gl/glfw/v3.1/glfw"
+	"github.com/go-gl/mathgl/mgl32"
+	"github.com/jakecoffman/cp"
+	"gonum.org/v1/gonum/graph"
+	"gonum.org/v1/gonum/graph/path"
+	"gonum.org/v1/gonum/graph/simple"
 )
 
 // Room is room
 type Room struct {
-	Color mgl32.Vec4
-	Shape *cp.Shape
+	Color    mgl32.Vec4
+	Shape    *cp.Shape
+	Selected bool
 }
 
 var (
-	space *cp.Space
-	rooms []*Room
+	space         *cp.Space
+	rooms         []*Room
+	selected      []*Room
+	triangulation *delaunay.Triangulation
+	edges         graph.WeightedEdges
 )
 
 func drawRoom(room *Room) {
@@ -50,13 +60,55 @@ func drawRoom(room *Room) {
 	gl.Vertex2d(x4, y4)
 	gl.End()
 	gl.Begin(gl.LINE_LOOP)
-	gl.Color4f(.3, .3, 1, .9)
+	gl.Color4f(
+		room.Color.X()*0.5,
+		room.Color.Y()*0.5,
+		room.Color.Z()*0.5,
+		room.Color.W(),
+	)
 	gl.LineWidth(1.0)
 	gl.Vertex2d(x1, y1)
 	gl.Vertex2d(x2, y2)
 	gl.Vertex2d(x3, y3)
 	gl.Vertex2d(x4, y4)
 	gl.End()
+}
+
+func drawTriangles() {
+	if edges != nil {
+		// draw edges
+		hashMap := map[int64]*Room{}
+		for _, room := range selected {
+			hashMap[int64(room.Shape.HashId())] = room
+		}
+		for edges.Next() {
+			p := hashMap[edges.WeightedEdge().From().ID()].Shape.BB().Center()
+			q := hashMap[edges.WeightedEdge().To().ID()].Shape.BB().Center()
+			gl.Begin(gl.LINE_LOOP)
+			gl.Color4f(.9, .9, 0, .9)
+			gl.LineWidth(1.0)
+			gl.Vertex2d(p.X, p.Y)
+			gl.Vertex2d(q.X, q.Y)
+			gl.End()
+		}
+		edges.Reset()
+	} else if triangulation != nil {
+		// draw triagulation
+		ts := triangulation.Triangles
+		hs := triangulation.Halfedges
+		for i, h := range hs {
+			if i > h {
+				p := selected[ts[i]].Shape.BB().Center()
+				q := selected[ts[nextHalfEdge(i)]].Shape.BB().Center()
+				gl.Begin(gl.LINE_LOOP)
+				gl.Color4f(.9, .9, 0, .9)
+				gl.LineWidth(1.0)
+				gl.Vertex2d(p.X, p.Y)
+				gl.Vertex2d(q.X, q.Y)
+				gl.End()
+			}
+		}
+	}
 }
 
 // OpenGL draw function
@@ -77,7 +129,7 @@ func draw(window *glfw.Window) {
 	y := float64(height)
 	h := 0
 
-	gl.Color4f(.1, .1, .1, .8)
+	gl.Color4f(.1, .1, .1, .4)
 	gl.LineWidth(1.0)
 
 	// x方向
@@ -121,9 +173,20 @@ func draw(window *glfw.Window) {
 		x := roundm(float64(room.Shape.Body().Position().X), 4.0)
 		y := roundm(float64(room.Shape.Body().Position().Y), 4.0)
 		gl.Translated(x, y, 0.0)
+		if room.Selected {
+			room.Color = mgl32.Vec4{.8, .0, 0, .6}
+		}
 		drawRoom(room)
 		gl.PopMatrix()
 	}
+	drawTriangles()
+}
+
+func nextHalfEdge(e int) int {
+	if e%3 == 2 {
+		return e - 2
+	}
+	return e + 1
 }
 
 func addRoom(pos cp.Vector, w float64, h float64) {
@@ -145,10 +208,10 @@ func waitForSleep() bool {
 	sleeping := false
 	for _, v := range rooms {
 		if v.Shape.Body().IsSleeping() {
-			v.Color = mgl32.Vec4{.3, .0, .0, .2}
+			v.Color = mgl32.Vec4{.6, .6, .6, .2}
 			sleeping = true
 		} else {
-			v.Color = mgl32.Vec4{.3, .3, 1, .2}
+			v.Color = mgl32.Vec4{.3, .3, 1, .6}
 			sleeping = false
 		}
 	}
@@ -157,6 +220,40 @@ func waitForSleep() bool {
 
 func step(dt float64) {
 	space.Step(dt)
+}
+
+func selectRoom() bool {
+	selected := false
+	for _, room := range rooms {
+		if room.Selected {
+			continue
+		}
+		if room.Shape.Area() > 3500.0 {
+			room.Selected = true
+			selected = true
+			break
+		}
+	}
+	if !selected {
+		return false
+	}
+	return true
+}
+
+func triangulate() (err error) {
+	points := []delaunay.Point{}
+	for _, room := range rooms {
+		if !room.Selected {
+			continue
+		}
+		points = append(points, delaunay.Point{
+			X: room.Shape.BB().Center().X,
+			Y: room.Shape.BB().Center().Y,
+		})
+		selected = append(selected, room)
+	}
+	triangulation, err = delaunay.Triangulate(points)
+	return err
 }
 
 // createSpace sets up the chipmunk space and static bodies
@@ -229,7 +326,7 @@ func main() {
 	glfw.SwapInterval(1)
 
 	phase := 0
-	ticker := time.NewTicker(time.Second / 60)
+	ticker := time.NewTicker(time.Second / 30)
 	for !window.ShouldClose() {
 		switch phase {
 		case 0:
@@ -242,6 +339,7 @@ func main() {
 				fmt.Println("phase1")
 			}
 		case 1:
+			bufio.NewScanner(os.Stdin).Scan()
 			phase = 2
 			fmt.Println("phase2")
 		case 2:
@@ -251,6 +349,39 @@ func main() {
 				fmt.Println("phase3")
 			}
 		case 3:
+			if !selectRoom() {
+				phase = 4
+				bufio.NewScanner(os.Stdin).Scan()
+				fmt.Println("phase4")
+			}
+		case 4:
+			if err := triangulate(); err != nil {
+				panic(err)
+			}
+			phase = 5
+			fmt.Println("phase5")
+		case 5:
+			bufio.NewScanner(os.Stdin).Scan()
+			g := simple.NewWeightedUndirectedGraph(0, math.Inf(1))
+			dst := simple.NewWeightedUndirectedGraph(0, math.Inf(1))
+			ts := triangulation.Triangles
+			hs := triangulation.Halfedges
+			for i, h := range hs {
+				if i > h {
+					p := selected[ts[i]]
+					q := selected[ts[nextHalfEdge(i)]]
+					g.SetWeightedEdge(simple.WeightedEdge{
+						F: simple.Node(p.Shape.HashId()),
+						T: simple.Node(q.Shape.HashId()),
+						W: p.Shape.BB().Center().DistanceSq(q.Shape.BB().Center()),
+					})
+				}
+			}
+			path.Prim(dst, g)
+			edges = dst.WeightedEdges()
+			phase = 6
+			fmt.Println("phase6")
+		case 6:
 		}
 		draw(window)
 		window.SwapBuffers()
